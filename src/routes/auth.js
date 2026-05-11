@@ -43,9 +43,34 @@ router.post('/login', async (req, res) => {
 
 router.get('/me', require('../middleware/auth'), async (req, res) => {
   const { rows } = await pool.query(
-    'SELECT id, name, email, avatar FROM users WHERE id=$1', [req.user.id]
+    'SELECT id, name, email, avatar, created_at FROM users WHERE id=$1', [req.user.id]
   );
   res.json(rows[0]);
+});
+
+router.put('/profile', require('../middleware/auth'), async (req, res) => {
+  const { name, current_password, new_password } = req.body;
+  if (!name?.trim()) return res.status(400).json({ message: 'Name required' });
+
+  try {
+    if (new_password) {
+      if (!current_password) return res.status(400).json({ message: 'Current password required' });
+      const { rows } = await pool.query('SELECT password FROM users WHERE id=$1', [req.user.id]);
+      const valid = await bcrypt.compare(current_password, rows[0].password);
+      if (!valid) return res.status(400).json({ message: 'Current password incorrect' });
+      const hash = await bcrypt.hash(new_password, 10);
+      await pool.query('UPDATE users SET name=$1, password=$2 WHERE id=$3', [name.trim(), hash, req.user.id]);
+    } else {
+      await pool.query('UPDATE users SET name=$1 WHERE id=$2', [name.trim(), req.user.id]);
+    }
+
+    const { rows } = await pool.query(
+      'SELECT id, name, email, avatar, created_at FROM users WHERE id=$1', [req.user.id]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
 });
 
 module.exports = router;
